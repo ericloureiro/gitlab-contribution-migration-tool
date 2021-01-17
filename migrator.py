@@ -42,7 +42,7 @@ GIT_STATUS = 'git status --ahead-behind'
 ERROR_FETCH_DATA = '''Could not fetch data from user {}
 Are you sure that your user is correct and profile is public?'''
 ERROR_ARGUMENTS = '''Arguments are wrong! Try running:
-gitlab-migrator.py <username> [initialDate]
+migrator.py <username> [initialDate]
 username: GitLab public username profile
 initialDate(optional): Start commit date in YYYY-MM-DD format'''
 
@@ -101,7 +101,6 @@ def createCommits(stringDate, contributionsCount):
         setter = WINDOWS_SETTER
         dumpPath = WINDOWS_DUMP_PATH
 
-    # Echo message into md and commit it for every contribution
     for i in range(contributionsCount):
         message = COMMIT_MESSAGE.format(stringDate, i + 1)
 
