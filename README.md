@@ -15,7 +15,7 @@ Before running the script you need to make:
 Then: 
 - Clone  **your**  repository to local;
 - Copy  `gitlab-migrator.py`  into your project folder; 
-- Run  `python3 gitlab-migrator.py <username> [initialDate]`; 
+- Run  `python3 migrator.py <username> [initialDate]`; 
 	> - username: profile user on GitLab; 
 	>  - initialDate(optional): Start commit date in YYYY-MM-DD format. Do not inform it for all commits. 
 		
