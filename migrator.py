@@ -97,6 +97,10 @@ def createCommits(stringDate, contributionsCount):
         # Windows
         setter = WINDOWS_SETTER
         dumpPath = WINDOWS_DUMP_PATH
+        
+    # Set enviroment variables to allow past date commit
+    system(GIT_COMMITTER_DATE.format(setter, stringDateTime))
+    system(GIT_AUTHOR_DATE.format(setter, stringDateTime))
 
     for i in range(contributionsCount):
         message = COMMIT_MESSAGE.format(stringDate, i + 1)
@@ -104,10 +108,6 @@ def createCommits(stringDate, contributionsCount):
         # Echo message into md to enable commit of modified file
         system(ECHO_COMMIT.format(json.dumps(message)))
         
-        # Set enviroment variables to allow past date commit
-        system(GIT_COMMITTER_DATE.format(setter, stringDateTime))
-        system(GIT_AUTHOR_DATE.format(setter, stringDateTime))
-
         # Add file and do commit to GitHub
         system(GIT_ADD_ALL.format(path))
         system(GIT_COMMIT_ALL.format(stringDateTime, message, dumpPath))
