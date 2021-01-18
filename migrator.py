@@ -80,11 +80,8 @@ def getEvents(argv):
     # Request calendar from GitLab
     response = requestCalendar(argv)
 
-    # Load response into python object
-    calendar = json.loads(response)
-
-    # Filter and order events
-    events = parseCalendar(calendar, initialDateString, contributionsCount)
+    # Parse, filter and order events
+    events = parseResponse(response, initialDateString, contributionsCount)
 
     return events
 
@@ -137,19 +134,21 @@ def requestCalendar(argv):
 
     return response
 
-def parseCalendar(calendar, initialDateString, contributionsCount):
+def parseResponse(response, initialDateString, contributionsCount):
+    # Load response into python object
+    events = json.loads(response)
+
     # Filter days since 'initialDateString'
-    calendarFiltered = { k: v for k, v in calendar.items() if isFirstDateStringBeforeSecond(k, initialDateString) }
+    eventsFiltered = { k: v for k, v in events.items() if isFirstDateStringBeforeSecond(k, initialDateString) }
 
     # Sort dictionary chronologically
-    calendarOrdered = dict(sorted(calendarFiltered.items(), key=lambda item: item[0]))
+    eventsOrdered = dict(sorted(eventsFiltered.items(), key=lambda item: item[0]))
     
-    if initialDateString in calendarOrdered:
+    if initialDateString in eventsOrdered:
         # Remove already commited contributions
-        calendarOrdered[initialDateString] -= contributionsCount
+        eventsOrdered[initialDateString] -= contributionsCount
 
-    # Return parsed dictionary
-    return calendarOrdered
+    return eventsOrdered
 
 def isFirstDateStringBeforeSecond(date1, date2):
     return formatDateString(date1) >= formatDateString(date2)
