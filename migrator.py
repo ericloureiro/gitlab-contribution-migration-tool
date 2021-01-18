@@ -1,42 +1,33 @@
 #!/usr/bin/python
 from urllib.request import urlopen, Request
-from tqdm import tqdm
 from datetime import datetime
-from os import system, path, name
-import collections, ssl, sys, json
+from tqdm import tqdm
+import os, collections, ssl, sys, json
 
 # States
 STATE_INIT = 'Fetching GitLab events...'
 STATE_LOAD = 'Creating commits...'
 STATE_DONE = 'Done!\nGitHub status:'
+GIT_STATUS = 'git status --ahead-behind'
 
 # Values
-CONTRIBUTIONS_COUNT = 'contributionsCount'
+COUNTER = 'i'
+COMMITS_COUNT = 'commitsCount'
 COMMIT_FILE = 'commit.md'
-COMMIT_MESSAGE = '{{ "lastCommit" :  "{}", "contributionsCount" : {} }}'
 DATE_FORMAT = '%Y-%m-%d'
-ECHO_COMMIT = 'echo {} > commit.md'
-GITLAB_URL = 'https://gitlab.com/users/{}/calendar.json'
 LAST_COMMIT = 'lastCommit'
+READ = 'r'
 UNIX_EPOCH = '1970-01-01'
-STRING_DATETIME = '{} 12:00:00'
+USER = 'user'
 USER_AGENT_KEY = 'User-Agent'
 USER_AGENT_VALUE = 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.3'
 
 # OS
 WINDOWS_NAME = 'nt'
+WINDOWS_DUMP_PATH = 'NUL'
 WINDOWS_SETTER = 'set'
-WINDOWS_DUMP_PATH = ''
+UNIX_DUMP_PATH = '/dev/null'
 UNIX_SETTER = 'export'
-UNIX_DUMP_PATH = '> /dev/null'
-
-# Commands
-READ = 'r'
-GIT_ADD_ALL = 'git add --all {}'
-GIT_AUTHOR_DATE = '{} GIT_AUTHOR_DATE="{}"'
-GIT_COMMITTER_DATE = '{} GIT_COMMITTER_DATE="{}"'
-GIT_COMMIT_ALL = 'git commit --date="{}" -m "{}" {}'
-GIT_STATUS = 'git status --ahead-behind'
 
 # Errors
 ERROR_FETCH_DATA = '''Could not fetch data from user {}
@@ -51,68 +42,44 @@ def main(argv):
     events = getEvents(argv)
 
     print(STATE_LOAD)
-    for stringDate, contributionsCount in tqdm(events.items()):
-        createCommits(stringDate, contributionsCount),
+    for event in tqdm(events):
+        createCommits(event),
 
     print(STATE_DONE)
-    system(GIT_STATUS)
+    os.system(GIT_STATUS)
 
 def getEvents(argv):
     try:
-        if (len(argv) < 2):
-            raise Exception()
-
-        if path.exists(COMMIT_FILE):
-            # Read data from previously md file
-            cacheFile = open(COMMIT_FILE, READ)
-            cacheData = json.loads(cacheFile.read())
-        
-            initialDateString = cacheData[LAST_COMMIT]
-            contributionsCount = cacheData[CONTRIBUTIONS_COUNT]
+        if os.path.exists(COMMIT_FILE):
+            # Read data from md file
+            baseEvent = Event.fromLocal(COMMIT_FILE)
         else:
-            # Get initial commit date as an argument or fetch all commits
-            initialDateString = argv[2] if len(argv) > 2 else UNIX_EPOCH
-            contributionsCount = 0
+            # Get data from arguments
+            baseEvent = Event.fromArgs(argv)
     except:
         print(ERROR_ARGUMENTS)
         exit()
 
-    # Request calendar from GitLab
-    response = requestCalendar(argv)
+    # Request events from GitLab
+    response = requestEvents(baseEvent.user)
 
-    # Parse, filter and order events
-    events = parseResponse(response, initialDateString, contributionsCount)
+    return parsedEvents(response, baseEvent)
 
-    return events
+def createCommits(event):
+    # Get dump path variable to hide commit messages based on OS
+    dumpPath = WINDOWS_DUMP_PATH if os.name == WINDOWS_NAME else UNIX_DUMP_PATH
 
-def createCommits(stringDate, contributionsCount):
-    stringDateTime = STRING_DATETIME.format(stringDate)
-
-    # Get variables based on OS
-    if name != WINDOWS_NAME:
-        # UNIX
-        setter = UNIX_SETTER
-        dumpPath = UNIX_DUMP_PATH
-    else:
-        # Windows
-        setter = WINDOWS_SETTER
-        dumpPath = WINDOWS_DUMP_PATH
+    for i in range(event.commitsCount):
+        message = event.toMessage(i + 1)
         
-    # Set enviroment variables to allow past date commit
-    system(GIT_COMMITTER_DATE.format(setter, stringDateTime))
-    system(GIT_AUTHOR_DATE.format(setter, stringDateTime))
-
-    for i in range(contributionsCount):
-        message = COMMIT_MESSAGE.format(stringDate, i + 1)
-
         # Echo message into md to enable commit of modified file
-        system(ECHO_COMMIT.format(json.dumps(message)))
-        
-        # Add file and do commit to GitHub
-        system(GIT_ADD_ALL.format(path))
-        system(GIT_COMMIT_ALL.format(stringDateTime, message, dumpPath))
+        os.system(f'echo {json.dumps(message)} > {COMMIT_FILE}')
 
-def requestCalendar(argv):
+        # Add file and do commit to GitHub
+        os.system(f'git add {COMMIT_FILE}')
+        os.system(f'git commit --date="{event.dateString} 12:00:00" -m "{message}" > {dumpPath}')
+
+def requestEvents(user):
     try:
         # Sign default certificate to allow https request
         ssl._create_default_https_context = ssl._create_unverified_context
@@ -121,7 +88,7 @@ def requestCalendar(argv):
         headers = { USER_AGENT_KEY : USER_AGENT_VALUE }
         
         # URL to fetch user commits data from calendar.json
-        url = GITLAB_URL.format(argv[1])
+        url = f'https://gitlab.com/users/{user}/calendar.json'
 
         # Send request from URL and Headers
         request = urlopen(Request(url = url, headers = headers))
@@ -129,32 +96,65 @@ def requestCalendar(argv):
         # Fetch succesful decoded response
         response = request.read().decode()
     except:
-        print(ERROR_FETCH_DATA.format(argv[1]))
+        print(ERROR_FETCH_DATA.format(user))
         exit()
 
-    return response
+    return json.loads(response)
 
-def parseResponse(response, initialDateString, contributionsCount):
-    # Load response into python object
-    events = json.loads(response)
-
-    # Filter days since 'initialDateString'
-    eventsFiltered = { k: v for k, v in events.items() if isFirstDateStringBeforeSecond(k, initialDateString) }
-
-    # Sort dictionary chronologically
-    eventsOrdered = dict(sorted(eventsFiltered.items(), key=lambda item: item[0]))
+def parsedEvents(response, baseEvent):
+    eventsDict = response.items()
     
-    if initialDateString in eventsOrdered:
+    if baseEvent.dateString in eventsDict:
         # Remove already commited contributions
-        eventsOrdered[initialDateString] -= contributionsCount
+        eventsDict[baseEvent.dateString] -= baseEvent.commitsCount
 
-    return eventsOrdered
+    # Filter days since 'baseEvent.dateString' and Parse dictionary into [Event]
+    events = [Event(baseEvent.user, k, v) for k, v in eventsDict if baseEvent.isBefore(k)]    
 
-def isFirstDateStringBeforeSecond(date1, date2):
-    return formatDateString(date1) >= formatDateString(date2)
+    return sorted(events)
 
-def formatDateString(dateString):
-    return datetime.strptime(dateString, DATE_FORMAT)
+def formatDateString(date):
+    return datetime.strptime(date, DATE_FORMAT)
+
+class Event:
+    def __init__(self, user = '', date = UNIX_EPOCH, count = 0):
+        self.user = user
+        self.dateString = date 
+        self.commitsCount = count
+
+    def __lt__(self, other):
+        return self.dateString < other.dateString
+
+    @classmethod
+    def fromArgs(self, args):
+        if len(args) > 2:
+            print(args)
+            return Event(args[1], args[2])
+        
+        if len(args) > 1:
+            return Event(args[1])
+
+        raise Exception()
+
+    @classmethod
+    def fromLocal(self, path):
+        file = open(path, READ)
+        
+        data = json.loads(file.read())
+        
+        return Event(data[USER], data[LAST_COMMIT], data[COMMITS_COUNT])
+
+    def toMessage(self, i):
+        data = {}
+        data[USER] = self.user
+        data[LAST_COMMIT] = self.dateString
+        data[COMMITS_COUNT] = self.commitsCount
+        data[COUNTER] = i
+
+        return json.dumps(data)
+
+    def isBefore(self, date):
+        return formatDateString(self.dateString) < formatDateString(date)
 
 if __name__ == "__main__":
    main(sys.argv)
