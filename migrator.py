@@ -1,6 +1,5 @@
 #!/usr/bin/python
 from urllib.request import urlopen, Request
-from datetime import datetime
 from tqdm import tqdm
 import os, collections, ssl, sys, json
 
@@ -39,38 +38,33 @@ initialDate(optional): Start commit date in YYYY-MM-DD format'''
 
 def main(argv):
     print(STATE_INIT)
-    events = getEvents(argv)
+    profile = getProfile(argv)
 
     print(STATE_LOAD)
-    for event in tqdm(events):
-        createCommits(event),
+    for event in tqdm(profile.events):
+        createCommits(event, profile.user),
 
     print(STATE_DONE)
     os.system(GIT_STATUS)
 
-def getEvents(argv):
+def getProfile(argv):
     try:
         if os.path.exists(COMMIT_FILE):
             # Read data from md file
-            baseEvent = Event.fromLocal(COMMIT_FILE)
+            return Profile.fromLocal(COMMIT_FILE)
         else:
             # Get data from arguments
-            baseEvent = Event.fromArgs(argv)
+            return Profile.fromArgs(argv)
     except:
         print(ERROR_ARGUMENTS)
         exit()
 
-    # Request events from GitLab
-    response = requestEvents(baseEvent.user)
-
-    return parsedEvents(response, baseEvent)
-
-def createCommits(event):
+def createCommits(event, user):
     # Get dump path variable to hide commit messages based on OS
     dumpPath = WINDOWS_DUMP_PATH if os.name == WINDOWS_NAME else UNIX_DUMP_PATH
 
     for i in range(event.commitsCount):
-        message = event.toMessage(i + 1)
+        message = event.toMessage(user, i + 1)
         
         # Echo message into md to enable commit of modified file
         os.system(f'echo {json.dumps(message)} > {COMMIT_FILE}')
@@ -79,46 +73,74 @@ def createCommits(event):
         os.system(f'git add {COMMIT_FILE}')
         os.system(f'git commit --date="{event.dateString} 12:00:00" -m "{message}" > {dumpPath}')
 
-def requestEvents(user):
-    try:
-        # Sign default certificate to allow https request
-        ssl._create_default_https_context = ssl._create_unverified_context
+def fetchEvents(profile):
+    # Sign default certificate to allow https request
+    ssl._create_default_https_context = ssl._create_unverified_context
 
-        # Headers to pass GitLab validation simulating a browser
-        headers = { USER_AGENT_KEY : USER_AGENT_VALUE }
+    # Headers to pass GitLab validation simulating a browser
+    headers = { USER_AGENT_KEY : USER_AGENT_VALUE }
         
-        # URL to fetch user commits data from calendar.json
-        url = f'https://gitlab.com/users/{user}/calendar.json'
+    # URL to fetch user commits data from calendar.json
+    url = f'https://gitlab.com/users/{profile.user}/calendar.json'
 
+    try:
         # Send request from URL and Headers
         request = urlopen(Request(url = url, headers = headers))
         
         # Fetch succesful decoded response
         response = request.read().decode()
     except:
-        print(ERROR_FETCH_DATA.format(user))
+        print(ERROR_FETCH_DATA.format(profile.user))
         exit()
-
-    return json.loads(response)
-
-def parsedEvents(response, baseEvent):
-    eventsDict = response.items()
     
-    if baseEvent.dateString in eventsDict:
+    # Parse, filter and sort events
+    events = parseResponse(response, profile.baseEvent)
+    
+    return events
+
+def parseResponse(response, baseEvent):
+    # Dump response into python object and get events
+    eventsDict = json.loads(response).items()
+
+    # Timeline zero point
+    dateString = baseEvent.dateString
+
+    if dateString in eventsDict:
         # Remove already commited contributions
-        eventsDict[baseEvent.dateString] -= baseEvent.commitsCount
+        eventsDict[dateString] -= baseEvent.commitsCount
 
-    # Filter days since 'baseEvent.dateString' and Parse dictionary into [Event]
-    events = [Event(baseEvent.user, k, v) for k, v in eventsDict if baseEvent.isBefore(k)]    
+    # Filter events since zero point, parse into list and sort
+    events = sorted([Event(k, v) for k, v in eventsDict if dateString < k])    
 
-    return sorted(events)
+    return events
 
-def formatDateString(date):
-    return datetime.strptime(date, DATE_FORMAT)
+class Profile:
+    def __init__(self, user, baseEvent):
+        self.user = user
+        self.baseEvent = baseEvent
+        self.events = fetchEvents(self)
+
+    @classmethod
+    def fromArgs(self, args):
+        user = args[1]
+        baseEvent = Event.fromArgs(args)
+        
+        return Profile(user, baseEvent)
+
+    @classmethod
+    def fromLocal(self, path):
+        file = open(path, READ)
+        data = json.loads(file.read())
+        args = []
+
+        # Parse json into list of args
+        for item in data:
+            args.append(item)
+
+        return Profile.fromArgs(args)
 
 class Event:
-    def __init__(self, user = '', date = UNIX_EPOCH, count = 0):
-        self.user = user
+    def __init__(self, date = UNIX_EPOCH, count = 0):
         self.dateString = date 
         self.commitsCount = count
 
@@ -127,34 +149,22 @@ class Event:
 
     @classmethod
     def fromArgs(self, args):
-        if len(args) > 2:
-            print(args)
-            return Event(args[1], args[2])
+        if len(args) == 4:
+            return Event(args[2], args[3])
         
-        if len(args) > 1:
-            return Event(args[1])
-
-        raise Exception()
-
-    @classmethod
-    def fromLocal(self, path):
-        file = open(path, READ)
+        if len(args) == 3:
+            return Event(args[2])
         
-        data = json.loads(file.read())
-        
-        return Event(data[USER], data[LAST_COMMIT], data[COMMITS_COUNT])
+        return Event()
 
-    def toMessage(self, i):
+    def toMessage(self, user, i):
         data = {}
-        data[USER] = self.user
+        data[COUNTER] = i
+        data[USER] = user
         data[LAST_COMMIT] = self.dateString
         data[COMMITS_COUNT] = self.commitsCount
-        data[COUNTER] = i
-
+        
         return json.dumps(data)
-
-    def isBefore(self, date):
-        return formatDateString(self.dateString) < formatDateString(date)
 
 if __name__ == "__main__":
    main(sys.argv)
