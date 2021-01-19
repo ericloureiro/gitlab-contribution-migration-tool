@@ -67,58 +67,17 @@ def createCommits(event, user):
         message = event.toMessage(user, i + 1)
         
         # Echo message into md to enable commit of modified file
-        os.system(f'echo {json.dumps(message)} > {COMMIT_FILE}')
+        os.system(f'echo {json.dumps(message)} >> {COMMIT_FILE}')
 
         # Add file and do commit to GitHub
         os.system(f'git add {COMMIT_FILE}')
         os.system(f'git commit --date="{event.dateString} 12:00:00" -m "{message}" > {dumpPath}')
 
-def fetchEvents(profile):
-    # Sign default certificate to allow https request
-    ssl._create_default_https_context = ssl._create_unverified_context
-
-    # Headers to pass GitLab validation simulating a browser
-    headers = { USER_AGENT_KEY : USER_AGENT_VALUE }
-        
-    # URL to fetch user commits data from calendar.json
-    url = f'https://gitlab.com/users/{profile.user}/calendar.json'
-
-    try:
-        # Send request from URL and Headers
-        request = urlopen(Request(url = url, headers = headers))
-        
-        # Fetch succesful decoded response
-        response = request.read().decode()
-    except:
-        print(ERROR_FETCH_DATA.format(profile.user))
-        exit()
-    
-    # Parse, filter and sort events
-    events = parseResponse(response, profile.baseEvent)
-    
-    return events
-
-def parseResponse(response, baseEvent):
-    # Dump response into python object and get events
-    eventsDict = json.loads(response).items()
-
-    # Timeline zero point
-    dateString = baseEvent.dateString
-
-    if dateString in eventsDict:
-        # Remove already commited contributions
-        eventsDict[dateString] -= baseEvent.commitsCount
-
-    # Filter events since zero point, parse into list and sort
-    events = sorted([Event(k, v) for k, v in eventsDict if dateString < k])    
-
-    return events
-
 class Profile:
     def __init__(self, user, baseEvent):
         self.user = user
         self.baseEvent = baseEvent
-        self.events = fetchEvents(self)
+        self.fetchEvents()
 
     @classmethod
     def fromArgs(self, args):
@@ -131,18 +90,62 @@ class Profile:
     def fromLocal(self, path):
         file = open(path, READ)
         data = json.loads(file.read())
+        
         args = []
-
         # Parse json into list of args
         for item in data:
             args.append(item)
 
         return Profile.fromArgs(args)
 
+    def fetchEvents(self):
+        # Sign default certificate to allow https request
+        ssl._create_default_https_context = ssl._create_unverified_context
+
+        # Headers to pass GitLab validation simulating a browser
+        headers = { USER_AGENT_KEY : USER_AGENT_VALUE }
+        
+        # URL to fetch user commits data from calendar.json
+        url = f'https://gitlab.com/users/{self.user}/calendar.json'
+
+        try:
+            # Send request from URL and Headers
+            request = urlopen(Request(url = url, headers = headers))
+        
+            # Fetch successful decoded response
+            response = request.read().decode()
+
+            # Dump response into python object
+            data = json.loads(response)
+        except:
+            print(ERROR_FETCH_DATA.format(self.user))
+            exit()
+        
+        events = []
+        # Parse json into list of Events
+        for date, count in data.items():
+            event = Event(date, count)
+            baseEvent = self.baseEvent
+
+            if baseEvent > event:
+                # Filter events before point zero event
+                continue
+
+            if baseEvent == event:
+                # Remove already commited contributions
+                event.commitsCount -= baseEvent.commitsCount
+                
+            events.append(event)
+
+        self.events = sorted(events)
+
 class Event:
     def __init__(self, date = UNIX_EPOCH, count = 0):
         self.dateString = date 
         self.commitsCount = count
+
+    def __eq__(self, other):
+        return self.dateString == other.dateString
 
     def __lt__(self, other):
         return self.dateString < other.dateString
