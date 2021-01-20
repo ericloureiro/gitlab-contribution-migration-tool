@@ -38,57 +38,36 @@ initialDate(optional): Start commit date in YYYY-MM-DD format'''
 
 def main(argv):
     print(STATE_INIT)
-    profile = getProfile(argv)
+    profile = Profile.build(argv)
 
     print(STATE_LOAD)
-    for event in tqdm(profile.events):
-        createCommits(event, profile.user),
+    profile.createCommits()
 
     print(STATE_DONE)
     os.system(GIT_STATUS)
-
-def getProfile(argv):
-    try:
-        if os.path.exists(COMMIT_FILE):
-            # Read data from md file
-            return Profile.fromLocal(COMMIT_FILE)
-        else:
-            # Get data from arguments
-            return Profile.fromArgs(argv)
-    except:
-        print(ERROR_ARGUMENTS)
-        exit()
-
-def createCommits(event, user):
-    # Get dump path variable to hide commit messages based on OS
-    dumpPath = WINDOWS_DUMP_PATH if os.name == WINDOWS_NAME else UNIX_DUMP_PATH
-
-    for i in range(event.commitsCount):
-        message = event.toMessage(user, i + 1)
-        
-        # Echo message into md to enable commit of modified file
-        os.system(f'echo {json.dumps(message)} >> {COMMIT_FILE}')
-
-        # Add file and do commit to GitHub
-        os.system(f'git add {COMMIT_FILE}')
-        os.system(f'git commit --date="{event.dateString} 12:00:00" -m "{message}" > {dumpPath}')
 
 class Profile:
     def __init__(self, user, baseEvent):
         self.user = user
         self.baseEvent = baseEvent
         self.fetchEvents()
-
+    
     @classmethod
-    def fromArgs(self, args):
-        user = args[1]
-        baseEvent = Event.fromArgs(args)
-        
-        return Profile(user, baseEvent)
-
+    def build(self, args):
+        try:
+            if os.path.exists(COMMIT_FILE):
+                # Read data from md file
+                return Profile.fromLocal()
+            else:
+                # Get data from arguments
+                return Profile.fromArgs(argv)
+        except:
+            print(ERROR_ARGUMENTS)
+            exit()
+            
     @classmethod
-    def fromLocal(self, path):
-        file = open(path, READ)
+    def fromLocal(self):
+        file = open(COMMIT_FILE, READ)
         data = json.loads(file.read())
         
         args = []
@@ -97,6 +76,13 @@ class Profile:
             args.append(item)
 
         return Profile.fromArgs(args)
+        
+    @classmethod
+    def fromArgs(self, args):
+        user = args[1]
+        baseEvent = Event.fromArgs(args)
+        
+        return Profile(user, baseEvent)
 
     def fetchEvents(self):
         # Sign default certificate to allow https request
@@ -121,6 +107,11 @@ class Profile:
             print(ERROR_FETCH_DATA.format(self.user))
             exit()
         
+        events = parseResponse(data.items())
+        
+        self.events = sorted(events)
+        
+    def parseResponse(self, items):
         events = []
         # Parse json into list of Events
         for date, count in data.items():
@@ -137,8 +128,12 @@ class Profile:
                 
             events.append(event)
 
-        self.events = sorted(events)
-
+        return events
+    
+    def createCommits(self):
+        for event in tqdm(self.events):
+            event.createCommits(self.user)
+    
 class Event:
     def __init__(self, date = UNIX_EPOCH, count = 0):
         self.dateString = date 
@@ -159,6 +154,21 @@ class Event:
             return Event(args[2])
         
         return Event()
+    
+    def createCommits(self, user):
+        # Get dump path variable to hide commit messages based on OS
+        dumpPath = WINDOWS_DUMP_PATH if os.name == WINDOWS_NAME else UNIX_DUMP_PATH
+
+        for i in range(self.commitsCount):
+            message = self.toMessage(user, i + 1)
+        
+            # Echo message into md to enable commit of modified file
+            os.system(f'echo {json.dumps(message)} >> {COMMIT_FILE}')
+
+            # Add file and do commit to GitHub
+            os.system(f'git add {COMMIT_FILE}')
+            os.system(f'git commit --date="{self.dateString} 12:00:00" -m "{message}" > {dumpPath}')
+
 
     def toMessage(self, user, i):
         data = {}
