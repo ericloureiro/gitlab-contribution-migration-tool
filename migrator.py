@@ -60,7 +60,7 @@ class Profile:
                 return Profile.fromLocal()
             else:
                 # Get data from arguments
-                return Profile.fromArgs(argv)
+                return Profile.fromArgs(args)
         except:
             print(ERROR_ARGUMENTS)
             exit()
@@ -90,7 +90,7 @@ class Profile:
 
         # Headers to pass GitLab validation simulating a browser
         headers = { USER_AGENT_KEY : USER_AGENT_VALUE }
-        
+            
         # URL to fetch user commits data from calendar.json
         url = f'https://gitlab.com/users/{self.user}/calendar.json'
 
@@ -107,14 +107,14 @@ class Profile:
             print(ERROR_FETCH_DATA.format(self.user))
             exit()
         
-        events = parseResponse(data.items())
+        events = self.parseResponse(data.items())
         
         self.events = sorted(events)
         
     def parseResponse(self, items):
         events = []
         # Parse json into list of Events
-        for date, count in data.items():
+        for date, count in items:
             event = Event(date, count)
             baseEvent = self.baseEvent
 
