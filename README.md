@@ -24,4 +24,8 @@ Then:
 - Push your commits; 
 - Enjoy your calendar contributions on both platforms!
 
+## Demonstration
+
+![](demo.gif)
+
 ### [](https://github.com/ericloureiro/gitlab-contribution-migration-tool/blob/main/README.md#many-thanks-to-ssk1002-for-original-idea)Many thanks to  [ssk1002](https://github.com/ssk1002/gitlab-contribution-migration-tool)  for the original idea
