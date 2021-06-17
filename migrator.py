@@ -5,6 +5,7 @@ import os, collections, ssl, sys, json
 
 # States
 STATE_INIT = 'Fetching GitLab events...'
+STATE_EMPTY = 'Could not fetch events. Do you have commits or a public profile?'
 STATE_LOAD = 'Creating commits...'
 STATE_DONE = 'Done!\nGitHub status:'
 GIT_STATUS = 'git status --ahead-behind'
@@ -39,6 +40,10 @@ initialDate(optional): Start commit date in YYYY-MM-DD format'''
 def main(argv):
     print(STATE_INIT)
     profile = Profile.build(argv)
+
+    if not profile.events:
+        print(STATE_EMPTY)
+        return
 
     print(STATE_LOAD)
     profile.createCommits()
